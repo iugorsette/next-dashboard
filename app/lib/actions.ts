@@ -4,10 +4,10 @@ import { sql } from '@vercel/postgres'
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { AuthError } from 'next-auth';
+import { AuthError } from 'next-auth'
 import { signIn } from '../../auth'
 
-const FormSchema = z.object({
+const InvoiceFormSchema = z.object({
   id: z.string(),
   customerId: z.string({
     invalid_type_error: 'Please select a customer.',
@@ -20,12 +20,31 @@ const FormSchema = z.object({
   }),
   date: z.string(),
 })
+const CustomerFormSchema = z.object({
+  id: z.string(),
+  name: z.string().min(4, {
+    message: 'Please enter your full name.',
+  }),
+  email: z.string().email({
+    message: 'Please enter a valid email address.',
+  }),
+  image: z.string().optional(),
+})
 
-const CreateInvoice = FormSchema.omit({ id: true, date: true })
+const CreateCustomer = CustomerFormSchema.omit({ id: true })
+const CreateInvoice = InvoiceFormSchema.omit({ id: true, date: true })
 
-const UpdateInvoice = FormSchema.omit({ id: true, date: true })
+const UpdateInvoice = InvoiceFormSchema.omit({ id: true, date: true })
+export type CustomerState = {
+  errors?: {
+    name?: string[]
+    email?: string[]
+    image?: string[]
+  }
+  message?: string | null
+}
 
-export type State = {
+export type InvoiceState = {
   errors?: {
     customerId?: string[]
     amount?: string[]
@@ -33,8 +52,15 @@ export type State = {
   }
   message?: string | null
 }
+export type State<T> = {
+  errors: Record<keyof T, string[]>
+  message: string | null
+}
 
-export async function createInvoice(prevState: State, formData: FormData) {
+export async function createInvoice(
+  prevState: InvoiceState,
+  formData: FormData
+) {
   const validatedFields = CreateInvoice.safeParse({
     customerId: formData.get('customerId'),
     amount: formData.get('amount'),
@@ -69,7 +95,7 @@ export async function createInvoice(prevState: State, formData: FormData) {
 
 export async function updateInvoice(
   id: string,
-  prevState: State,
+  prevState: InvoiceState,
   formData: FormData
 ) {
   const validatedFields = UpdateInvoice.safeParse({
@@ -112,22 +138,98 @@ export async function deleteInvoice(id: string) {
   }
 }
 
- 
+export async function createCustomer(
+  prevState: CustomerState,
+  formData: FormData
+) {
+  const validatedFields = CreateCustomer.safeParse({
+    name: formData.get('name'),
+    email: formData.get('email'),
+    image: formData.get('image'),
+  })
+
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: 'Missing Fields. Failed to Create Customer.',
+    }
+  }
+
+  const { name, email, image } = validatedFields.data
+
+  try {
+    await sql`
+      INSERT INTO customers (name, email, image_url)
+      VALUES (${name}, ${email}, ${image} ) 
+    `
+  } catch (error) {
+    return {
+      message: 'Database Error: Failed to Create Customer.',
+    }
+  }
+
+  revalidatePath('/dashboard/customers')
+  redirect('/dashboard/customers')
+}
+
+export async function updateCustomer(
+  id: string,
+  prevState: CustomerState,
+  formData: FormData
+) {
+  const validatedFields = CustomerFormSchema.safeParse({
+    name: formData.get('name'),
+    email: formData.get('email'),
+    image: formData.get('image'),
+  })
+
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: 'Missing Fields. Failed to Update Customer.',
+    }
+  }
+
+  const { name, email, image } = validatedFields.data
+  try {
+    await sql`
+      UPDATE customers
+      SET name = ${name}, email = ${email}, image_url = ${image}
+      WHERE id = ${id}
+    `
+  } catch (error) {
+    return { message: 'Database Error: Failed to Update Customer.' }
+  }
+
+  revalidatePath('/dashboard/customers')
+  redirect('/dashboard/customers')
+}
+
+export async function deleteCustomer(id: string) {
+  try {
+    await sql`DELETE FROM customers WHERE id = ${id}`
+    revalidatePath('/dashboard/customers')
+    return { message: 'Deleted Customer.' }
+  } catch (error) {
+    return { message: 'Database Error: Failed to Delete Customer.' }
+  }
+}
+
 export async function authenticate(
   prevState: string | undefined,
-  formData: FormData,
+  formData: FormData
 ) {
   try {
-    await signIn('credentials', formData);
+    await signIn('credentials', formData)
   } catch (error) {
     if (error instanceof AuthError) {
       switch (error.type) {
         case 'CredentialsSignin':
-          return 'Invalid credentials.';
+          return 'Invalid credentials.'
         default:
-          return 'Something went wrong.';
+          return 'Something went wrong.'
       }
     }
-    throw error;
+    throw error
   }
 }
