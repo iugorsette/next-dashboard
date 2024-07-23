@@ -64,6 +64,7 @@ export type InvoiceState = {
 
 export type UserState = {
   errors?: {
+    name?: string[]
     email?: string[]
     password?: string[]
   }
@@ -234,7 +235,10 @@ export async function deleteCustomer(id: string) {
 }
 
 
-export async function createUser(prevState: UserState, formData: FormData) {
+export async function createUser(
+  prevState: UserState, 
+  formData: FormData
+) {
   const validatedFields = CreateUser.safeParse({
     name: formData.get('name'),
     email: formData.get('email'),
@@ -265,6 +269,7 @@ export async function createUser(prevState: UserState, formData: FormData) {
   
   authenticate(undefined, formData)
   revalidatePath('/dashboard')
+  redirect('/dashboard')
 }
 
 export async function authenticate(
