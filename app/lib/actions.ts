@@ -6,7 +6,15 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { AuthError } from 'next-auth'
 import { signIn } from '../../auth'
+import bcrypt from 'bcrypt'
 
+const UserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  password: z.string().min(8),
+  created_at: z.string(),
+})
 const InvoiceFormSchema = z.object({
   id: z.string(),
   customerId: z.string({
@@ -33,8 +41,9 @@ const CustomerFormSchema = z.object({
 
 const CreateCustomer = CustomerFormSchema.omit({ id: true })
 const CreateInvoice = InvoiceFormSchema.omit({ id: true, date: true })
-
+const CreateUser = UserSchema.omit({ id: true, created_at: true })
 const UpdateInvoice = InvoiceFormSchema.omit({ id: true, date: true })
+
 export type CustomerState = {
   errors?: {
     name?: string[]
@@ -52,6 +61,15 @@ export type InvoiceState = {
   }
   message?: string | null
 }
+
+export type UserState = {
+  errors?: {
+    email?: string[]
+    password?: string[]
+  }
+  message?: string | null
+}
+
 export type State<T> = {
   errors: Record<keyof T, string[]>
   message: string | null
@@ -213,6 +231,40 @@ export async function deleteCustomer(id: string) {
   } catch (error) {
     return { message: 'Database Error: Failed to Delete Customer.' }
   }
+}
+
+
+export async function createUser(prevState: UserState, formData: FormData) {
+  const validatedFields = CreateUser.safeParse({
+    name: formData.get('name'),
+    email: formData.get('email'),
+    password: formData.get('password'),
+  })
+
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: 'Missing Fields. Failed to Create User.',
+    }
+  }
+
+  const { name, email, password } = validatedFields.data
+  const hashedPassword = await bcrypt.hash(password, 10)
+
+  console.log(email, hashedPassword)
+  try {
+    await sql`
+      INSERT INTO users (email, password, name)
+      VALUES (${email}, ${hashedPassword}, ${name} )
+    `
+  } catch (error) {
+    return {
+      message: 'Database Error: Failed to Create User.',
+    }
+  }
+  
+  authenticate(undefined, formData)
+  revalidatePath('/dashboard')
 }
 
 export async function authenticate(
